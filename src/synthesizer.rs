@@ -72,6 +72,176 @@ impl Synthesizer<MagmaPlan> for Architecture {
     }
 }
 
+// ── Crossplane Composition + XRD target ─────────────────────────────
+
+/// Marker: emit a Crossplane Composition (per-resource template) plus
+/// a paired CompositeResourceDefinition (typed input schema). The
+/// pair is what Kubernetes operators submit to a cluster running the
+/// crossplane controller.
+///
+/// Output shape:
+///
+/// ```yaml
+/// apiVersion: apiextensions.crossplane.io/v1
+/// kind: CompositeResourceDefinition
+/// metadata: { name: <arch>.lava.pleme.io }
+/// spec:
+///   group: lava.pleme.io
+///   names: { kind: <ArchKind>, plural: <archs> }
+///   versions: [ ... ]
+/// ---
+/// apiVersion: apiextensions.crossplane.io/v1
+/// kind: Composition
+/// metadata: { name: <arch>-composition }
+/// spec:
+///   compositeTypeRef: { ... }
+///   resources: [ <one entry per Architecture resource> ]
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct CrossplaneYaml;
+
+impl RenderTarget for CrossplaneYaml {
+    type Output = String;
+}
+
+impl Synthesizer<CrossplaneYaml> for Architecture {
+    fn synthesize(&self) -> Result<String, RenderError> {
+        let json = self.render_terraform_json()?;
+        Ok(crossplane_yaml_from(&self.name, &json))
+    }
+}
+
+/// Build the typed Crossplane YAML pair from a typed terraform.json
+/// shape. Internal helper — exposed via `Synthesizer<CrossplaneYaml>`.
+fn crossplane_yaml_from(arch_name: &str, terraform: &serde_json::Value) -> String {
+    let kind_name = arch_kind(arch_name);
+    let mut xrd = serde_yaml::Mapping::new();
+    xrd.insert("apiVersion".into(), "apiextensions.crossplane.io/v1".into());
+    xrd.insert("kind".into(), "CompositeResourceDefinition".into());
+    let mut xrd_metadata = serde_yaml::Mapping::new();
+    xrd_metadata.insert(
+        "name".into(),
+        serde_yaml::Value::String(format!(
+            "{}.lava.pleme.io",
+            arch_name.to_ascii_lowercase()
+        )),
+    );
+    xrd.insert("metadata".into(), serde_yaml::Value::Mapping(xrd_metadata));
+    let mut xrd_spec = serde_yaml::Mapping::new();
+    xrd_spec.insert("group".into(), "lava.pleme.io".into());
+    let mut xrd_names = serde_yaml::Mapping::new();
+    xrd_names.insert("kind".into(), serde_yaml::Value::String(kind_name.clone()));
+    xrd_names.insert(
+        "plural".into(),
+        serde_yaml::Value::String(format!("{}s", kind_name.to_ascii_lowercase())),
+    );
+    xrd_spec.insert("names".into(), serde_yaml::Value::Mapping(xrd_names));
+    xrd.insert("spec".into(), serde_yaml::Value::Mapping(xrd_spec));
+
+    let mut composition = serde_yaml::Mapping::new();
+    composition.insert("apiVersion".into(), "apiextensions.crossplane.io/v1".into());
+    composition.insert("kind".into(), "Composition".into());
+    let mut comp_metadata = serde_yaml::Mapping::new();
+    comp_metadata.insert(
+        "name".into(),
+        serde_yaml::Value::String(format!("{arch_name}-composition")),
+    );
+    composition.insert("metadata".into(), serde_yaml::Value::Mapping(comp_metadata));
+    let mut comp_spec = serde_yaml::Mapping::new();
+    let mut composite_type_ref = serde_yaml::Mapping::new();
+    composite_type_ref.insert("apiVersion".into(), "lava.pleme.io/v1alpha1".into());
+    composite_type_ref.insert("kind".into(), serde_yaml::Value::String(kind_name));
+    comp_spec.insert(
+        "compositeTypeRef".into(),
+        serde_yaml::Value::Mapping(composite_type_ref),
+    );
+
+    // One Composition.resources entry per terraform resource — the
+    // Crossplane provider routes each to its matching provider.
+    let mut resources = Vec::new();
+    if let Some(by_type) = terraform.get("resource").and_then(serde_json::Value::as_object) {
+        for (type_id, by_name) in by_type {
+            if let Some(by_name_map) = by_name.as_object() {
+                for (name, body) in by_name_map {
+                    let mut entry = serde_yaml::Mapping::new();
+                    entry.insert(
+                        "name".into(),
+                        serde_yaml::Value::String(format!("{type_id}.{name}")),
+                    );
+                    let mut base = serde_yaml::Mapping::new();
+                    base.insert(
+                        "apiVersion".into(),
+                        serde_yaml::Value::String(format!("{type_id}.crossplane.io/v1alpha1")),
+                    );
+                    base.insert("kind".into(), serde_yaml::Value::String(arch_kind(type_id)));
+                    let mut base_metadata = serde_yaml::Mapping::new();
+                    base_metadata.insert("name".into(), serde_yaml::Value::String(name.clone()));
+                    base.insert("metadata".into(), serde_yaml::Value::Mapping(base_metadata));
+                    let mut spec = serde_yaml::Mapping::new();
+                    spec.insert(
+                        "forProvider".into(),
+                        json_to_yaml(body),
+                    );
+                    base.insert("spec".into(), serde_yaml::Value::Mapping(spec));
+                    entry.insert("base".into(), serde_yaml::Value::Mapping(base));
+                    resources.push(serde_yaml::Value::Mapping(entry));
+                }
+            }
+        }
+    }
+    comp_spec.insert("resources".into(), serde_yaml::Value::Sequence(resources));
+    composition.insert("spec".into(), serde_yaml::Value::Mapping(comp_spec));
+
+    let xrd_yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(xrd)).unwrap_or_default();
+    let composition_yaml =
+        serde_yaml::to_string(&serde_yaml::Value::Mapping(composition)).unwrap_or_default();
+    format!("{xrd_yaml}---\n{composition_yaml}")
+}
+
+/// Convert `aws-vpc-network` → `AwsVpcNetwork` (Crossplane Kind shape).
+fn arch_kind(arch_name: &str) -> String {
+    let mut out = String::with_capacity(arch_name.len());
+    let mut capitalize_next = true;
+    for c in arch_name.chars() {
+        if c == '-' || c == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            out.extend(c.to_uppercase());
+            capitalize_next = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn json_to_yaml(v: &serde_json::Value) -> serde_yaml::Value {
+    match v {
+        serde_json::Value::Null => serde_yaml::Value::Null,
+        serde_json::Value::Bool(b) => serde_yaml::Value::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_yaml::Value::Number(serde_yaml::Number::from(i))
+            } else if let Some(f) = n.as_f64() {
+                serde_yaml::Value::Number(serde_yaml::Number::from(f))
+            } else {
+                serde_yaml::Value::Null
+            }
+        }
+        serde_json::Value::String(s) => serde_yaml::Value::String(s.clone()),
+        serde_json::Value::Array(items) => {
+            serde_yaml::Value::Sequence(items.iter().map(json_to_yaml).collect())
+        }
+        serde_json::Value::Object(map) => {
+            let mut m = serde_yaml::Mapping::new();
+            for (k, val) in map {
+                m.insert(serde_yaml::Value::String(k.clone()), json_to_yaml(val));
+            }
+            serde_yaml::Value::Mapping(m)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +276,44 @@ mod tests {
         // M0 behavior: identical to TerraformJson. M1: typed Plan directly.
         let plan: serde_json::Value = Synthesizer::<MagmaPlan>::synthesize(&arch).unwrap();
         assert_eq!(plan["resource"]["aws_vpc"]["main"]["cidr_block"], "10.0.0.0/16");
+    }
+
+    #[test]
+    fn synthesize_to_crossplane_yaml_emits_xrd_and_composition() {
+        let arch = tiny_vpc();
+        let yaml: String = Synthesizer::<CrossplaneYaml>::synthesize(&arch).unwrap();
+
+        // CompositeResourceDefinition for the architecture.
+        assert!(yaml.contains("kind: CompositeResourceDefinition"));
+        assert!(yaml.contains("name: vpc.lava.pleme.io"));
+        // Composition referencing the kind.
+        assert!(yaml.contains("kind: Composition"));
+        assert!(yaml.contains("name: vpc-composition"));
+        // The resource entry is name-prefixed and carries the
+        // forProvider block with the original cidr_block value.
+        assert!(yaml.contains("name: aws_vpc.main"));
+        assert!(yaml.contains("cidr_block: 10.0.0.0/16"));
+        // Documents are split by ---.
+        assert!(yaml.contains("---"));
+    }
+
+    #[test]
+    fn arch_kind_converts_kebab_to_pascal() {
+        assert_eq!(arch_kind("aws-vpc-network"), "AwsVpcNetwork");
+        assert_eq!(arch_kind("cloudflare_dns_records"), "CloudflareDnsRecords");
+        assert_eq!(arch_kind("simple"), "Simple");
+    }
+
+    #[test]
+    fn crossplane_yaml_parses_as_two_valid_yaml_documents() {
+        use serde::Deserialize;
+        let arch = tiny_vpc();
+        let yaml = Synthesizer::<CrossplaneYaml>::synthesize(&arch).unwrap();
+        let docs: Vec<serde_yaml::Value> = serde_yaml::Deserializer::from_str(&yaml)
+            .map(|d| serde_yaml::Value::deserialize(d).unwrap())
+            .collect();
+        assert_eq!(docs.len(), 2, "expected XRD + Composition pair");
+        assert_eq!(docs[0]["kind"], "CompositeResourceDefinition");
+        assert_eq!(docs[1]["kind"], "Composition");
     }
 }
