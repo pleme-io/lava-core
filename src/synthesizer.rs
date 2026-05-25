@@ -192,10 +192,34 @@ fn crossplane_yaml_from(arch_name: &str, terraform: &serde_json::Value) -> Strin
     comp_spec.insert("resources".into(), serde_yaml::Value::Sequence(resources));
     composition.insert("spec".into(), serde_yaml::Value::Mapping(comp_spec));
 
-    let xrd_yaml = serde_yaml::to_string(&serde_yaml::Value::Mapping(xrd)).unwrap_or_default();
-    let composition_yaml =
-        serde_yaml::to_string(&serde_yaml::Value::Mapping(composition)).unwrap_or_default();
-    format!("{xrd_yaml}---\n{composition_yaml}")
+    // Multi-document YAML emission: typed MultiDocYaml wrapper with
+    // a Display impl that writes `---\n` between documents via
+    // writeln!() (the allowed surface per ★★ TYPED EMISSION).
+    MultiDocYaml(vec![
+        serde_yaml::Value::Mapping(xrd),
+        serde_yaml::Value::Mapping(composition),
+    ])
+    .to_string()
+}
+
+/// Typed multi-document YAML — joins N serde_yaml::Value documents
+/// with the YAML `---` separator via the Display surface. Avoids
+/// format!()-of-YAML-syntax per ★★ TYPED EMISSION.
+struct MultiDocYaml(Vec<serde_yaml::Value>);
+
+impl std::fmt::Display for MultiDocYaml {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, doc) in self.0.iter().enumerate() {
+            if i > 0 {
+                writeln!(f, "---")?;
+            }
+            // serde_yaml::to_string already terminates with a newline;
+            // write the raw serialization through.
+            let body = serde_yaml::to_string(doc).unwrap_or_default();
+            f.write_str(&body)?;
+        }
+        Ok(())
+    }
 }
 
 /// Convert `aws-vpc-network` → `AwsVpcNetwork` (Crossplane Kind shape).
