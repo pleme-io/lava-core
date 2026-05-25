@@ -181,7 +181,7 @@ rec {
       };
       "lava-core" = rec {
         crateName = "lava-core";
-        version = "0.1.2";
+        version = "0.1.3";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         libName = "lava_core";
@@ -204,14 +204,12 @@ rec {
             packageId = "serde_json";
           }
           {
-            name = "thiserror";
-            packageId = "thiserror";
-          }
-        ];
-        devDependencies = [
-          {
             name = "serde_yaml";
             packageId = "serde_yaml";
+          }
+          {
+            name = "thiserror";
+            packageId = "thiserror";
           }
         ];
 
