@@ -43,7 +43,7 @@ use thiserror::Error;
 /// Provider reference: namespace + name + optional alias. Same shape
 /// magma uses (`magma_types::ProviderReference`); field set kept
 /// identical for round-trip-byte-equal interop.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderRef {
     /// e.g. "hashicorp/aws"
     pub source: String,
@@ -51,6 +51,10 @@ pub struct ProviderRef {
     pub name: String,
     /// e.g. "us-east-2" — None for the default unaliased provider.
     pub alias: Option<String>,
+    /// Provider-level configuration (region, profile, default tags,
+    /// auth fields). Renders inside `provider.<name>.{…}`.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub config: IndexMap<String, Value>,
 }
 
 /// Reference to another resource's output. Renders as
@@ -164,10 +168,19 @@ impl Resource {
 pub struct Architecture {
     pub name: String,
     pub resources: Vec<Resource>,
+    /// `data` blocks — terraform `data.<type>.<name>`. Same shape as
+    /// resources (typed key/value attributes); the renderer routes
+    /// them under the top-level `data` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_sources: Vec<Resource>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub outputs: IndexMap<String, Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<ProviderRef>,
+    /// `locals` block — terraform `locals { … }`. Authoring-side
+    /// constants downstream `${local.foo}` references resolve against.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub locals: IndexMap<String, Value>,
 }
 
 impl Architecture {
@@ -176,8 +189,10 @@ impl Architecture {
         Self {
             name: name.into(),
             resources: Vec::new(),
+            data_sources: Vec::new(),
             outputs: IndexMap::new(),
             providers: Vec::new(),
+            locals: IndexMap::new(),
         }
     }
 
@@ -201,17 +216,42 @@ impl Architecture {
     pub fn render_terraform_json(&self) -> Result<serde_json::Value, RenderError> {
         let mut root = serde_json::Map::new();
 
-        // provider block
+        // provider block — Terraform JSON allows multiple configs per
+        // provider via array form (`provider: { aws: [{...}, {...}] }`).
         if !self.providers.is_empty() {
-            let mut provider_map = serde_json::Map::new();
+            let mut grouped: IndexMap<String, Vec<serde_json::Value>> = IndexMap::new();
             for p in &self.providers {
                 let mut entry = serde_json::Map::new();
                 if let Some(alias) = &p.alias {
                     entry.insert("alias".to_string(), serde_json::Value::String(alias.clone()));
                 }
-                provider_map.insert(p.name.clone(), serde_json::Value::Object(entry));
+                for (k, v) in &p.config {
+                    entry.insert(k.clone(), v.clone().into_json());
+                }
+                grouped
+                    .entry(p.name.clone())
+                    .or_default()
+                    .push(serde_json::Value::Object(entry));
+            }
+            let mut provider_map = serde_json::Map::new();
+            for (name, mut entries) in grouped {
+                // Single config → object; multiple → array (terraform-spec).
+                if entries.len() == 1 {
+                    provider_map.insert(name, entries.remove(0));
+                } else {
+                    provider_map.insert(name, serde_json::Value::Array(entries));
+                }
             }
             root.insert("provider".to_string(), serde_json::Value::Object(provider_map));
+        }
+
+        // locals block
+        if !self.locals.is_empty() {
+            let mut locals = serde_json::Map::new();
+            for (k, v) in &self.locals {
+                locals.insert(k.clone(), v.clone().into_json());
+            }
+            root.insert("locals".to_string(), serde_json::Value::Object(locals));
         }
 
         // resource block — nested as resource.<type>.<name> = {attrs}
@@ -269,6 +309,31 @@ impl Architecture {
                 resource.insert(type_id, serde_json::Value::Object(t));
             }
             root.insert("resource".to_string(), serde_json::Value::Object(resource));
+        }
+
+        // data block — same shape as resource, routed under `data`.
+        if !self.data_sources.is_empty() {
+            let mut data_by_type: IndexMap<String, IndexMap<String, serde_json::Value>> =
+                IndexMap::new();
+            for d in &self.data_sources {
+                let mut body = serde_json::Map::new();
+                for (k, v) in &d.attributes {
+                    body.insert(k.clone(), v.clone().into_json());
+                }
+                data_by_type
+                    .entry(d.type_id.clone())
+                    .or_default()
+                    .insert(d.name.clone(), serde_json::Value::Object(body));
+            }
+            let mut data = serde_json::Map::new();
+            for (type_id, named) in data_by_type {
+                let mut t = serde_json::Map::new();
+                for (n, body) in named {
+                    t.insert(n, body);
+                }
+                data.insert(type_id, serde_json::Value::Object(t));
+            }
+            root.insert("data".to_string(), serde_json::Value::Object(data));
         }
 
         // output block
@@ -421,6 +486,81 @@ mod tests {
         );
         let json = arch.render_terraform_json().unwrap();
         assert_eq!(json["output"]["vpc_id"]["value"], "${aws_vpc.main.id}");
+    }
+
+    #[test]
+    fn data_sources_render_under_top_level_data_block() {
+        let mut arch = Architecture::new("net");
+        let mut a = IndexMap::new();
+        a.insert("name".to_string(), Value::s("amazon-linux-2"));
+        a.insert("most_recent".to_string(), Value::b(true));
+        arch.data_sources.push(Resource {
+            type_id: "aws_ami".to_string(),
+            name: "default".to_string(),
+            attributes: a,
+            depends_on: vec![],
+            provider: None,
+            multiplicity: None,
+        });
+        let json = arch.render_terraform_json().unwrap();
+        assert_eq!(json["data"]["aws_ami"]["default"]["name"], "amazon-linux-2");
+        assert_eq!(json["data"]["aws_ami"]["default"]["most_recent"], true);
+    }
+
+    #[test]
+    fn locals_render_under_top_level_locals_block() {
+        let mut arch = Architecture::new("net");
+        arch.locals.insert("env".to_string(), Value::s("prod"));
+        arch.locals.insert("retries".to_string(), Value::n(3));
+        let json = arch.render_terraform_json().unwrap();
+        assert_eq!(json["locals"]["env"], "prod");
+        assert_eq!(json["locals"]["retries"], 3);
+    }
+
+    #[test]
+    fn providers_with_config_render_inside_provider_block() {
+        let mut arch = Architecture::new("net");
+        let mut cfg = IndexMap::new();
+        cfg.insert("region".to_string(), Value::s("us-east-2"));
+        cfg.insert("profile".to_string(), Value::s("prod"));
+        arch.providers.push(ProviderRef {
+            source: "hashicorp/aws".to_string(),
+            name: "aws".to_string(),
+            alias: None,
+            config: cfg,
+        });
+        let json = arch.render_terraform_json().unwrap();
+        assert_eq!(json["provider"]["aws"]["region"], "us-east-2");
+        assert_eq!(json["provider"]["aws"]["profile"], "prod");
+    }
+
+    #[test]
+    fn multiple_provider_configs_render_as_array() {
+        let mut arch = Architecture::new("net");
+        let mut east = IndexMap::new();
+        east.insert("region".to_string(), Value::s("us-east-2"));
+        let mut west = IndexMap::new();
+        west.insert("region".to_string(), Value::s("us-west-2"));
+        arch.providers.push(ProviderRef {
+            source: "hashicorp/aws".into(),
+            name: "aws".into(),
+            alias: None,
+            config: east,
+        });
+        arch.providers.push(ProviderRef {
+            source: "hashicorp/aws".into(),
+            name: "aws".into(),
+            alias: Some("west".into()),
+            config: west,
+        });
+        let json = arch.render_terraform_json().unwrap();
+        assert!(json["provider"]["aws"].is_array());
+        let arr = json["provider"]["aws"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        // First entry was added first → us-east-2.
+        assert_eq!(arr[0]["region"], "us-east-2");
+        assert_eq!(arr[1]["region"], "us-west-2");
+        assert_eq!(arr[1]["alias"], "west");
     }
 
     #[test]
