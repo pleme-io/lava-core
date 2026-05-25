@@ -33,6 +33,9 @@
 
 #![allow(clippy::module_name_repetitions)]
 
+pub mod synthesizer;
+pub use synthesizer::{MagmaPlan, RenderTarget, Synthesizer, TerraformJson};
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
