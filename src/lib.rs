@@ -33,8 +33,17 @@
 
 #![allow(clippy::module_name_repetitions)]
 
+pub mod dashboard;
+pub use dashboard::{
+    Annotation, Dashboard, DashboardError, Datasource, Datasources, DisplayMode, GraphMode, Panel,
+    PanelKind, Presence, Query, QueryLang, Role, Row, Theme, Threshold, ThresholdConfig,
+    ThresholdMode, TimeRange, Variable, VariableKind,
+};
+
 pub mod synthesizer;
-pub use synthesizer::{CrossplaneYaml, MagmaPlan, RenderTarget, Synthesizer, TerraformJson};
+pub use synthesizer::{
+    CrossplaneYaml, GrafanaJson, MagmaPlan, RenderTarget, Synthesizer, TerraformJson,
+};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -529,6 +538,11 @@ pub enum BackendRef {
 pub enum RenderError {
     #[error("JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// The source document was rejected before rendering. Carries the
+    /// originating error's message so a `Synthesizer` caller sees why
+    /// without having to know which document type produced it.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 #[cfg(test)]

@@ -266,6 +266,34 @@ fn json_to_yaml(v: &serde_json::Value) -> serde_yaml::Value {
     }
 }
 
+// ── Grafana dashboard JSON target ───────────────────────────────────
+
+/// Marker: emit a Grafana dashboard document (schemaVersion 39).
+///
+/// The first target whose *source* is not an [`Architecture`]. The trait
+/// is generic over the target and implemented per (source, target) pair,
+/// so a second document type slots in exactly the way the header
+/// promises — `impl Synthesizer<NewTarget> for NewSource`.
+///
+/// Rendering needs a [`Theme`](crate::Theme) to resolve semantic colour
+/// roles, and `Synthesizer::synthesize` takes no arguments, so this impl
+/// uses the fleet default. Call
+/// [`Dashboard::render_grafana_json`](crate::Dashboard::render_grafana_json)
+/// directly to render against a different theme.
+#[derive(Debug, Clone, Copy)]
+pub struct GrafanaJson;
+
+impl RenderTarget for GrafanaJson {
+    type Output = serde_json::Value;
+}
+
+impl Synthesizer<GrafanaJson> for crate::Dashboard {
+    fn synthesize(&self) -> Result<serde_json::Value, RenderError> {
+        self.render_grafana_json(&crate::Theme::default())
+            .map_err(|e| RenderError::Invalid(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
