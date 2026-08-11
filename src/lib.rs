@@ -68,51 +68,188 @@ pub struct ResourceRef {
     pub attribute: String,
 }
 
-/// Attribute value. Wraps serde_json::Value plus a typed variant for
-/// references — keeps the dep graph walkable without string-parsing.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+/// A typed document value.
+///
+/// Genuinely recursive: a [`ResourceRef`] survives at any depth, inside
+/// lists and maps alike. The previous shape — `Ref(ResourceRef) |
+/// Json(serde_json::Value)` — delegated all structure to serde_json and
+/// so could only carry a reference at the top level of an attribute:
+/// `Value::arr` projected every item through `into_json` at construction
+/// time, stringifying nested references before anyone could walk them.
+/// The doc comment on [`ResourceRef`] promised a dep graph walkable
+/// "without parsing interpolation strings"; below depth 0 that promise
+/// was false. It is now true at every depth.
+///
+/// This is the one document tree for the lava suite. `lava-chart`'s
+/// private `ValueTree` is the same shape and is retired in favour of it;
+/// note the two are *not* interchangeable by name — that crate's
+/// `Ref { paths }` is a Helm `.Values.a.b` lookup, semantically
+/// unrelated to a `ResourceRef` resource-graph coordinate.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
     Ref(ResourceRef),
-    Json(serde_json::Value),
+    List(Vec<Value>),
+    Map(IndexMap<String, Value>),
 }
 
 impl Value {
     #[must_use]
     pub fn s(v: impl Into<String>) -> Self {
-        Self::Json(serde_json::Value::String(v.into()))
+        Self::Str(v.into())
     }
     #[must_use]
     pub fn b(v: bool) -> Self {
-        Self::Json(serde_json::Value::Bool(v))
+        Self::Bool(v)
     }
     #[must_use]
     pub fn n(v: i64) -> Self {
-        Self::Json(serde_json::Value::Number(v.into()))
+        Self::Int(v)
     }
     #[must_use]
-    pub fn arr(items: impl IntoIterator<Item = Value>) -> Self {
-        Self::Json(serde_json::Value::Array(
-            items.into_iter().map(Value::into_json).collect(),
-        ))
+    pub fn f(v: f64) -> Self {
+        Self::Float(v)
     }
-    /// Strip the typed wrapper for JSON emission. References serialize
-    /// as `${type.name.attribute}` per Terraform's interpolation syntax.
+    /// Build a list. Unlike the previous implementation this does **not**
+    /// project items through `into_json` — a `Ref` inside a list stays a
+    /// `Ref`.
+    #[must_use]
+    pub fn arr(items: impl IntoIterator<Item = Value>) -> Self {
+        Self::List(items.into_iter().collect())
+    }
+    #[must_use]
+    pub fn map(entries: impl IntoIterator<Item = (String, Value)>) -> Self {
+        Self::Map(entries.into_iter().collect())
+    }
+
+    /// Project to JSON for emission. References render as
+    /// `${type.name.attribute}` per Terraform's interpolation syntax, at
+    /// whatever depth they sit.
+    ///
+    /// Map ordering is insertion order, not alphabetical — `serde_json`
+    /// is built here with `preserve_order` precisely so this projection
+    /// cannot quietly re-sort and falsify the byte-stability guarantee
+    /// [`Architecture::render_terraform_json`] makes.
     #[must_use]
     pub fn into_json(self) -> serde_json::Value {
         match self {
-            Self::Json(v) => v,
-            Self::Ref(r) => {
-                let mut s = String::from("${");
-                s.push_str(&r.type_id);
-                s.push('.');
-                s.push_str(&r.name);
-                s.push('.');
-                s.push_str(&r.attribute);
-                s.push('}');
-                serde_json::Value::String(s)
+            Self::Null => serde_json::Value::Null,
+            Self::Bool(b) => serde_json::Value::Bool(b),
+            Self::Int(n) => serde_json::Value::Number(n.into()),
+            Self::Float(f) => serde_json::Number::from_f64(f)
+                .map_or(serde_json::Value::Null, serde_json::Value::Number),
+            Self::Str(s) => serde_json::Value::String(s),
+            Self::Ref(r) => serde_json::Value::String(r.to_interpolation()),
+            Self::List(items) => {
+                serde_json::Value::Array(items.into_iter().map(Value::into_json).collect())
             }
+            Self::Map(entries) => serde_json::Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_json()))
+                    .collect(),
+            ),
         }
+    }
+
+    /// Lift a JSON document back into the tree. A string of the exact
+    /// shape `${a.b.c}` becomes a [`Value::Ref`]; every other string
+    /// stays a [`Value::Str`]. See [`ResourceRef::from_interpolation`].
+    #[must_use]
+    pub fn from_json(v: serde_json::Value) -> Self {
+        match v {
+            serde_json::Value::Null => Self::Null,
+            serde_json::Value::Bool(b) => Self::Bool(b),
+            serde_json::Value::Number(n) => n
+                .as_i64()
+                .map_or_else(|| Self::Float(n.as_f64().unwrap_or(0.0)), Self::Int),
+            serde_json::Value::String(s) => {
+                ResourceRef::from_interpolation(&s).map_or(Self::Str(s), Self::Ref)
+            }
+            serde_json::Value::Array(items) => {
+                Self::List(items.into_iter().map(Value::from_json).collect())
+            }
+            serde_json::Value::Object(entries) => Self::Map(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::from_json(v)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+/// Serde goes through the JSON projection, so the serialized form and the
+/// rendered form are the same bytes.
+///
+/// This also removes a real ambiguity the derived `#[serde(untagged)]`
+/// impl carried: `Ref` was a bare `ResourceRef`, so *any* three-key
+/// object named `{type_id, name, attribute}` deserialized back as a
+/// reference rather than as the map it was written as. Untagged tries
+/// variants in declaration order and cannot be told otherwise. Routing
+/// through `${…}` makes the discrimination syntactic and total.
+impl Serialize for Value {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        self.clone().into_json().serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        Ok(Self::from_json(serde_json::Value::deserialize(de)?))
+    }
+}
+
+impl ResourceRef {
+    /// Render as Terraform's interpolation syntax: `${type.name.attribute}`.
+    #[must_use]
+    pub fn to_interpolation(&self) -> String {
+        let mut s = String::with_capacity(
+            self.type_id.len() + self.name.len() + self.attribute.len() + 5,
+        );
+        s.push_str("${");
+        s.push_str(&self.type_id);
+        s.push('.');
+        s.push_str(&self.name);
+        s.push('.');
+        s.push_str(&self.attribute);
+        s.push('}');
+        s
+    }
+
+    /// Parse the exact shape `${a.b.c}` back into a reference.
+    ///
+    /// Deliberately strict: the whole string must be one interpolation
+    /// with exactly three dot-separated segments and nothing outside the
+    /// braces. `"prefix-${a.b.c}"`, `"${var.foo}"` and `"${a.b.c.d}"` all
+    /// return `None` and stay strings, because none of them is a
+    /// resource-output coordinate.
+    #[must_use]
+    pub fn from_interpolation(s: &str) -> Option<Self> {
+        let inner = s.strip_prefix("${")?.strip_suffix('}')?;
+        if inner.contains(['$', '{', '}']) {
+            return None;
+        }
+        let mut parts = inner.split('.');
+        let type_id = parts.next()?;
+        let name = parts.next()?;
+        let attribute = parts.next()?;
+        if parts.next().is_some()
+            || type_id.is_empty()
+            || name.is_empty()
+            || attribute.is_empty()
+        {
+            return None;
+        }
+        Some(Self {
+            type_id: type_id.to_string(),
+            name: name.to_string(),
+            attribute: attribute.to_string(),
+        })
     }
 }
 
@@ -582,5 +719,151 @@ mod tests {
         let yaml = serde_yaml::to_string(&arch).unwrap();
         let parsed: Architecture = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(arch, parsed);
+    }
+
+    fn vpc_id_ref() -> ResourceRef {
+        ResourceRef {
+            type_id: "aws_vpc".into(),
+            name: "main".into(),
+            attribute: "id".into(),
+        }
+    }
+
+    // ── the depth defect, both directions ────────────────────────────
+    //
+    // These are the red-run for the reason `Value` was replaced. Against
+    // the previous `Ref(ResourceRef) | Json(serde_json::Value)` shape both
+    // of them FAIL: `Value::arr` projected each item through `into_json`
+    // at construction, so the reference was already a `${…}` string before
+    // the assertion ran, and a map could only ever hold `serde_json`
+    // values. The dep-graph promise on `ResourceRef` held at depth 0 only.
+
+    #[test]
+    fn a_ref_survives_typed_inside_a_list() {
+        let v = Value::arr([Value::s("literal"), Value::Ref(vpc_id_ref())]);
+        let Value::List(items) = &v else {
+            panic!("expected a list, got {v:?}");
+        };
+        assert_eq!(items.len(), 2);
+        assert!(
+            matches!(&items[1], Value::Ref(r) if r == &vpc_id_ref()),
+            "the reference was flattened to {:?} instead of staying typed",
+            items[1]
+        );
+        // …and still renders correctly once projected.
+        assert_eq!(v.into_json()[1], "${aws_vpc.main.id}");
+    }
+
+    #[test]
+    fn a_ref_survives_typed_inside_a_map_at_depth() {
+        let inner = Value::map([("vpc_id".to_string(), Value::Ref(vpc_id_ref()))]);
+        let outer = Value::map([("network".to_string(), inner)]);
+        let Value::Map(top) = &outer else {
+            panic!("expected a map, got {outer:?}");
+        };
+        let Some(Value::Map(nested)) = top.get("network") else {
+            panic!("expected a nested map");
+        };
+        assert!(matches!(nested.get("vpc_id"), Some(Value::Ref(r)) if r == &vpc_id_ref()));
+        assert_eq!(
+            outer.into_json()["network"]["vpc_id"],
+            "${aws_vpc.main.id}"
+        );
+    }
+
+    // ── byte-stability ───────────────────────────────────────────────
+
+    #[test]
+    fn map_keys_render_in_insertion_order_not_alphabetically() {
+        // render_terraform_json documents itself as byte-stable. Before
+        // `preserve_order`, `into_json` built a BTreeMap-backed
+        // serde_json::Map and silently re-sorted every map, so this
+        // rendered as {"Alpha":…,"Name":…,"Zulu":…}.
+        let tags = Value::map([
+            ("Zulu".to_string(), Value::s("last-alphabetically")),
+            ("Alpha".to_string(), Value::s("first-alphabetically")),
+            ("Name".to_string(), Value::s("middle")),
+        ]);
+        let rendered = serde_json::to_string(&tags.into_json()).unwrap();
+        assert_eq!(
+            rendered,
+            r#"{"Zulu":"last-alphabetically","Alpha":"first-alphabetically","Name":"middle"}"#
+        );
+    }
+
+    #[test]
+    fn rendering_is_byte_identical_across_repeated_calls() {
+        let v = Value::map([
+            ("b".to_string(), Value::arr([Value::n(2), Value::n(1)])),
+            ("a".to_string(), Value::Ref(vpc_id_ref())),
+        ]);
+        let first = serde_json::to_string(&v.clone().into_json()).unwrap();
+        for _ in 0..16 {
+            assert_eq!(
+                serde_json::to_string(&v.clone().into_json()).unwrap(),
+                first
+            );
+        }
+    }
+
+    // ── the untagged-Ref ambiguity ───────────────────────────────────
+
+    #[test]
+    fn interpolation_round_trips_through_serde() {
+        let v = Value::Ref(vpc_id_ref());
+        let json = serde_json::to_string(&v).unwrap();
+        assert_eq!(json, r#""${aws_vpc.main.id}""#);
+        let back: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn a_three_key_map_is_not_mistaken_for_a_reference() {
+        // The derived #[serde(untagged)] impl deserialized ANY object
+        // carrying {type_id, name, attribute} back as a Ref, because
+        // untagged tries variants in declaration order and cannot be told
+        // otherwise. Routing serde through `${…}` makes the
+        // discrimination syntactic, so a map that merely happens to use
+        // those key names stays a map.
+        let map = Value::map([
+            ("type_id".to_string(), Value::s("aws_vpc")),
+            ("name".to_string(), Value::s("main")),
+            ("attribute".to_string(), Value::s("id")),
+        ]);
+        let round_tripped: Value =
+            serde_json::from_str(&serde_json::to_string(&map).unwrap()).unwrap();
+        assert_eq!(round_tripped, map, "a plain map came back as {round_tripped:?}");
+        assert!(matches!(round_tripped, Value::Map(_)));
+    }
+
+    #[test]
+    fn only_an_exact_three_segment_interpolation_parses_as_a_reference() {
+        assert_eq!(
+            ResourceRef::from_interpolation("${aws_vpc.main.id}"),
+            Some(vpc_id_ref())
+        );
+        // Everything below is a string, not a resource-output coordinate.
+        for not_a_ref in [
+            "${var.foo}",             // two segments — an input variable
+            "${aws_vpc.main.id.sub}", // four segments
+            "prefix-${aws_vpc.main.id}", // interpolation is not the whole string
+            "${aws_vpc.main.id}-suffix",
+            "${}",
+            "${..}",
+            "${aws_vpc..id}", // empty middle segment
+            "aws_vpc.main.id", // no braces at all
+            "${a.b.c}${d.e.f}", // two interpolations
+        ] {
+            assert_eq!(
+                ResourceRef::from_interpolation(not_a_ref),
+                None,
+                "{not_a_ref:?} should not parse as a reference"
+            );
+            // …and survives a serde round-trip as a plain string.
+            let v = Value::s(not_a_ref);
+            let back: Value =
+                serde_json::from_str(&serde_json::to_string(&v).unwrap()).unwrap();
+            assert_eq!(back, v);
+        }
     }
 }
