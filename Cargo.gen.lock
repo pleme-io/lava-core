@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "ecff30228da00f09d4b3d9fb5c466a3f088baeeff31fea0626350e8d1116d06c",
+  "cargo_lock_sha256": "6f3a3a51a414732394114b0008b19514d58f54a0b4fec1b1b22ff60435945e63",
   "manifest_sha256": {
-    "Cargo.toml": "4484d73c9f5f92641af7e6fbbaaedf1ac6f0747223bdd6ca8eeee28e55b24417"
+    "Cargo.toml": "8f48d480b9031d2129adb0a670026901465ab30c6811205b61feeea0c4b6431f"
   },
   "target_resolves": {
     "base": {
@@ -61,7 +61,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "lava-core-0.2.0": {
+      "lava-core-0.2.1": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -111,7 +111,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.19",
+            "package_key": "thiserror-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -423,11 +423,11 @@
           "proc-macro"
         ]
       },
-      "thiserror-2.0.19": {
+      "thiserror-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "thiserror_impl",
-            "package_key": "thiserror-impl-2.0.19",
+            "package_key": "thiserror-impl-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -442,7 +442,7 @@
           "std"
         ]
       },
-      "thiserror-impl-2.0.19": {
+      "thiserror-impl-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -528,7 +528,7 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "lava-core-0.2.0": {
+    "lava-core-0.2.1": {
       "edition": "2024",
       "lib_target": {
         "name": "lava_core",
@@ -571,11 +571,11 @@
     "syn-3.0.3": {
       "edition": "2021"
     },
-    "thiserror-2.0.19": {
+    "thiserror-2.0.20": {
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "thiserror-impl-2.0.19": {
+    "thiserror-impl-2.0.20": {
       "edition": "2021",
       "proc_macro": true
     },
