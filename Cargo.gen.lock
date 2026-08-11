@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "372bd1b898e3dff24253eaa2b2d34bf9e1a12ccb573247f65667f0bb7e2bf2f0",
+  "cargo_lock_sha256": "ecff30228da00f09d4b3d9fb5c466a3f088baeeff31fea0626350e8d1116d06c",
   "manifest_sha256": {
-    "Cargo.toml": "96a87deba57a6f75b7b48c7f44581989893c5890887d3844d10b5eeb76a36ba4"
+    "Cargo.toml": "4484d73c9f5f92641af7e6fbbaaedf1ac6f0747223bdd6ca8eeee28e55b24417"
   },
   "target_resolves": {
     "base": {
@@ -61,7 +61,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "lava-core-0.1.7": {
+      "lava-core-0.2.0": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -91,7 +91,9 @@
             "name": "serde_json",
             "package_key": "serde_json-1.0.151",
             "kind": "normal",
-            "features": [],
+            "features": [
+              "preserve_order"
+            ],
             "uses_default_features": true,
             "optional": false,
             "target": null,
@@ -264,6 +266,16 @@
       "serde_json-1.0.151": {
         "runtime_dependencies": [
           {
+            "name": "indexmap",
+            "package_key": "indexmap-2.14.0",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          },
+          {
             "name": "itoa",
             "package_key": "itoa-1.0.18",
             "kind": "normal",
@@ -307,6 +319,8 @@
         "build_dependencies": [],
         "features": [
           "default",
+          "indexmap",
+          "preserve_order",
           "std"
         ]
       },
@@ -514,7 +528,7 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "lava-core-0.1.7": {
+    "lava-core-0.2.0": {
       "edition": "2024",
       "lib_target": {
         "name": "lava_core",
