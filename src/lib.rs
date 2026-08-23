@@ -327,6 +327,29 @@ pub struct Architecture {
     /// constants downstream `${local.foo}` references resolve against.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub locals: IndexMap<String, Value>,
+    /// `import` blocks — terraform `import { to = …, id = … }`.
+    ///
+    /// ── ★ WHY A RENDERER NEEDS THESE AT ALL ──────────────────────────
+    /// Without them, an architecture describing infrastructure that ALREADY
+    /// EXISTS plans to CREATE it. For a catalogue of ~1000 repositories that
+    /// is a thousand `422 name already exists` failures, and the plan looks
+    /// entirely reasonable right up until apply.
+    ///
+    /// Adopt-not-create is therefore not a convenience: it is the difference
+    /// between a renderer that can describe a live estate and one that can
+    /// only describe a greenfield.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<Import>,
+}
+
+/// One terraform `import` block: adopt the existing object `id` into the
+/// address `to`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Import {
+    /// Resource address, e.g. `github_repository.foo`.
+    pub to: String,
+    /// Provider-specific id of the existing object.
+    pub id: String,
 }
 
 impl Architecture {
@@ -339,6 +362,7 @@ impl Architecture {
             outputs: IndexMap::new(),
             providers: Vec::new(),
             locals: IndexMap::new(),
+            imports: Vec::new(),
         }
     }
 
@@ -491,6 +515,26 @@ impl Architecture {
                 outputs.insert(k.clone(), serde_json::Value::Object(entry));
             }
             root.insert("output".to_string(), serde_json::Value::Object(outputs));
+        }
+
+        // import blocks
+        //
+        // An ARRAY, because terraform's import block is repeatable and each
+        // entry is a separate adoption — unlike `resource`/`data`, which nest
+        // by type and name. Rendering it as an object keyed by address would
+        // parse and then import nothing.
+        if !self.imports.is_empty() {
+            let arr: Vec<serde_json::Value> = self
+                .imports
+                .iter()
+                .map(|i| {
+                    let mut m = serde_json::Map::new();
+                    m.insert("to".to_string(), serde_json::Value::String(i.to.clone()));
+                    m.insert("id".to_string(), serde_json::Value::String(i.id.clone()));
+                    serde_json::Value::Object(m)
+                })
+                .collect();
+            root.insert("import".to_string(), serde_json::Value::Array(arr));
         }
 
         Ok(serde_json::Value::Object(root))
@@ -879,5 +923,34 @@ mod tests {
                 serde_json::from_str(&serde_json::to_string(&v).unwrap()).unwrap();
             assert_eq!(back, v);
         }
+    }
+}
+
+#[cfg(test)]
+mod import_block_tests {
+    use super::*;
+
+    #[test]
+    fn imports_render_as_a_top_level_array() {
+        let mut arch = Architecture::new("adopt");
+        arch.imports.push(Import { to: "github_repository.alpha".into(), id: "alpha".into() });
+        arch.imports.push(Import { to: "github_repository.beta".into(), id: "beta".into() });
+        let json = arch.render_terraform_json().unwrap();
+        // ★ ARRAY, not an object keyed by address. terraform's import block
+        // is repeatable; an object would parse and import nothing.
+        assert!(json["import"].is_array(), "got {}", json["import"]);
+        assert_eq!(json["import"][0]["to"], "github_repository.alpha");
+        assert_eq!(json["import"][0]["id"], "alpha");
+        assert_eq!(json["import"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn no_imports_emits_no_import_key() {
+        // An empty `import: []` is not the same document as no import block,
+        // and a renderer that always emits one makes every greenfield plan
+        // carry an adoption section it does not have.
+        let arch = Architecture::new("greenfield");
+        let json = arch.render_terraform_json().unwrap();
+        assert!(json.get("import").is_none(), "got {json}");
     }
 }
