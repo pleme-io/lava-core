@@ -340,6 +340,18 @@ pub struct Architecture {
     /// only describe a greenfield.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<Import>,
+    /// Terraform `moved` blocks: the state at `from` now belongs to `to`.
+    /// A renamed object whose address derives from its name plans as an
+    /// update in place instead of a destroy and a create.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moved: Vec<Moved>,
+}
+
+/// One terraform `moved` block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Moved {
+    pub from: String,
+    pub to: String,
 }
 
 /// One terraform `import` block: adopt the existing object `id` into the
@@ -363,6 +375,7 @@ impl Architecture {
             providers: Vec::new(),
             locals: IndexMap::new(),
             imports: Vec::new(),
+            moved: Vec::new(),
         }
     }
 
@@ -535,6 +548,14 @@ impl Architecture {
                 })
                 .collect();
             root.insert("import".to_string(), serde_json::Value::Array(arr));
+        }
+        if !self.moved.is_empty() {
+            let arr: Vec<serde_json::Value> = self
+                .moved
+                .iter()
+                .map(|m| serde_json::json!({ "from": m.from, "to": m.to }))
+                .collect();
+            root.insert("moved".to_string(), serde_json::Value::Array(arr));
         }
 
         Ok(serde_json::Value::Object(root))
@@ -942,6 +963,17 @@ mod import_block_tests {
         assert_eq!(json["import"][0]["to"], "github_repository.alpha");
         assert_eq!(json["import"][0]["id"], "alpha");
         assert_eq!(json["import"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn moved_renders_as_a_top_level_array() {
+        let mut arch = Architecture::new("t");
+        arch.moved.push(Moved { from: "github_repository.a".into(), to: "github_repository.b".into() });
+        let json = arch.render_terraform_json().unwrap();
+        assert_eq!(json["moved"][0]["from"], "github_repository.a");
+        assert_eq!(json["moved"][0]["to"], "github_repository.b");
+        let empty = Architecture::new("t").render_terraform_json().unwrap();
+        assert!(empty.get("moved").is_none());
     }
 
     #[test]
