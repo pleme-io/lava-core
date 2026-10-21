@@ -1,7 +1,10 @@
 [package]
 authors = ["pleme-io"]
+categories = ["config", "development-tools"]
 description = "Typed primitive layer for the lava suite. Tatara-lisp + Rust DSL frontend for magma. Brazilian-Portuguese for the substance magma flows as. Sits on pleme-io/magma as the tatara equivalent of pangea-core."
 edition = "2024"
+homepage = "https://github.com/pleme-io/lava-core"
+keywords = ["infrastructure", "iac", "terraform", "tatara-lisp", "pleme-io"]
 license = "MIT"
 name = "lava-core"
 readme = "README.md"
