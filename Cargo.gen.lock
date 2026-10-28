@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "698f282b79a8f8dce01677e3ba65910064d858f32cf25d1e89ecf7ffae698bee",
+  "cargo_lock_sha256": "7b7257d41f03c30f028ee885bd55c3e4d34efdbf6435f52d31af3a1225a2e50a",
   "manifest_sha256": {
-    "Cargo.toml": "e3cb8487458da11be41e93e4cfde6fab8d48a7d98d41dbb040bef6dd42a9e26f"
+    "Cargo.toml": "757a77fd44808f06104d06337b0d1e22be506532d9aa6ce54bd0147d2a2962f5"
   },
   "target_resolves": {
     "base": {
@@ -66,7 +66,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "lava-core-0.2.4": {
+      "lava-core-0.2.5": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -548,7 +548,7 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "lava-core-0.2.4": {
+    "lava-core-0.2.5": {
       "edition": "2024",
       "lib_target": {
         "name": "lava_core",

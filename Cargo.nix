@@ -95,10 +95,22 @@ rec {
     crates = {
       "equivalent" = rec {
         crateName = "equivalent";
-        version = "1.0.2";
+        version = "1.0.3";
         edition = "2015";
-        sha256 = "03swzqznragy8n0x31lqc78g2af054jwivp7lkrbrc0khz74lyl7";
+        sha256 = "09nqddaa84mix3vil6r02jlmya3qypi4j45dhzb8yphf83ap9l80";
 
+      };
+      "foldhash" = rec {
+        crateName = "foldhash";
+        version = "0.2.0";
+        edition = "2021";
+        sha256 = "1nvgylb099s11xpfm1kn2wcsql080nqmnhj1l25bp3r2b35j9kkp";
+        authors = [
+          "Orson Peters <orsonpeters@gmail.com>"
+        ];
+        features = {
+          "default" = [ "std" ];
+        };
       };
       "hashbrown" = rec {
         crateName = "hashbrown";
@@ -120,9 +132,9 @@ rec {
       };
       "indexmap" = rec {
         crateName = "indexmap";
-        version = "2.14.0";
+        version = "2.14.2";
         edition = "2024";
-        sha256 = "1na9z6f0d5pkjr1lgsni470v98gv2r7c41j8w48skr089x2yjrnl";
+        sha256 = "0mf86hbjkkcd82cpq683bblbs0zwa8ndla96ci8p1ji6bl7ijknc";
         dependencies = [
           {
             name = "equivalent";
@@ -181,7 +193,7 @@ rec {
       };
       "lava-core" = rec {
         crateName = "lava-core";
-        version = "0.2.4";
+        version = "0.2.5";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         libName = "lava_core";
@@ -205,8 +217,8 @@ rec {
             features = [ "preserve_order" ];
           }
           {
-            name = "serde_yaml";
-            packageId = "serde_yaml";
+            name = "serde_norway";
+            packageId = "serde_norway";
           }
           {
             name = "thiserror";
@@ -346,7 +358,7 @@ rec {
         features = {
           "default" = [ "std" "result" ];
         };
-        resolvedDefaultFeatures = [ "result" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "result" "std" ];
       };
       "serde_derive" = rec {
         crateName = "serde_derive";
@@ -384,18 +396,21 @@ rec {
       };
       "serde_json" = rec {
         crateName = "serde_json";
-        version = "1.0.151";
+        version = "1.0.154";
         edition = "2021";
-        sha256 = "051zww7lvpw147vvwss1ng6w587qyrkzg75fvj08q2dfrmgbahf8";
-        authors = [
-          "Erick Tryzelaar <erick.tryzelaar@gmail.com>"
-          "David Tolnay <dtolnay@gmail.com>"
-        ];
+        sha256 = "1mjby21g8fxhrsfp73yz8wg6n2f4h23ah0nczds409l53f5wrsg7";
         dependencies = [
+          {
+            name = "foldhash";
+            packageId = "foldhash";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
           {
             name = "indexmap";
             packageId = "indexmap";
             optional = true;
+            usesDefaultFeatures = false;
           }
           {
             name = "itoa";
@@ -433,17 +448,18 @@ rec {
           "alloc" = [ "serde_core/alloc" ];
           "default" = [ "std" ];
           "indexmap" = [ "dep:indexmap" ];
-          "preserve_order" = [ "indexmap" "std" ];
+          "preserve_order" = [ "indexmap" "alloc" "dep:foldhash" ];
           "std" = [ "memchr/std" "serde_core/std" ];
         };
-        resolvedDefaultFeatures = [ "default" "indexmap" "preserve_order" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "default" "indexmap" "preserve_order" "std" ];
       };
-      "serde_yaml" = rec {
-        crateName = "serde_yaml";
-        version = "0.9.34+deprecated";
+      "serde_norway" = rec {
+        crateName = "serde_norway";
+        version = "0.9.42";
         edition = "2021";
-        sha256 = "0isba1fjyg3l6rxk156k600ilzr8fp7crv82rhal0rxz5qd1m2va";
+        sha256 = "130nx1r3nwydglq1yrrcydavd6w5zj219zsimc7m1zdmi6ag4274";
         authors = [
+          "Christina Sørensen <christina@cafkafk.com>"
           "David Tolnay <dtolnay@gmail.com>"
         ];
         dependencies = [
@@ -464,17 +480,17 @@ rec {
             packageId = "serde";
           }
           {
-            name = "unsafe-libyaml";
-            packageId = "unsafe-libyaml";
+            name = "unsafe-libyaml-norway";
+            packageId = "unsafe-libyaml-norway";
           }
         ];
 
       };
       "syn" = rec {
         crateName = "syn";
-        version = "3.0.3";
+        version = "3.0.9";
         edition = "2021";
-        sha256 = "18srnql3cd39j9q6hf1az02p67rlr1rf6njx9zx4vxj9i3jvmsak";
+        sha256 = "0fw28lhl90kls24q2h2sp39yjb0lsvz5cwh9fd3f3w3v9kp8v36p";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -505,9 +521,9 @@ rec {
       };
       "thiserror" = rec {
         crateName = "thiserror";
-        version = "2.0.20";
+        version = "2.0.21";
         edition = "2021";
-        sha256 = "0kxs6p295jffxhzaxpxv1dwaaf5iqlm6sx8h0djp6ancbxgj71pc";
+        sha256 = "17hq1lh5dyr3bkc7zzjrbrp4qgkvhc48kgq1n5fdxkindaw2rr89";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -524,9 +540,9 @@ rec {
       };
       "thiserror-impl" = rec {
         crateName = "thiserror-impl";
-        version = "2.0.20";
+        version = "2.0.21";
         edition = "2021";
-        sha256 = "1bwjc94gi0xn5jz26h1a8bjj1wdkvvr6jifamyc4mp9n28zcs15w";
+        sha256 = "0945n8agp7kg6n6b35yyjb4g5xv2q22vrw15h6jj1nw76a99flgy";
         procMacro = true;
         libName = "thiserror_impl";
         authors = [
@@ -550,23 +566,24 @@ rec {
       };
       "unicode-ident" = rec {
         crateName = "unicode-ident";
-        version = "1.0.24";
+        version = "1.0.27";
         edition = "2021";
-        sha256 = "0xfs8y1g7syl2iykji8zk5hgfi5jw819f5zsrbaxmlzwsly33r76";
+        sha256 = "0qv54hz0sxmspjyr162z3435pnyylzjjhx3j4k1s359pqgb59ix2";
         libName = "unicode_ident";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
 
       };
-      "unsafe-libyaml" = rec {
-        crateName = "unsafe-libyaml";
-        version = "0.2.11";
+      "unsafe-libyaml-norway" = rec {
+        crateName = "unsafe-libyaml-norway";
+        version = "0.2.15";
         edition = "2021";
         crateBin = [];
-        sha256 = "0qdq69ffl3v5pzx9kzxbghzn0fzn266i1xn70y88maybz9csqfk7";
-        libName = "unsafe_libyaml";
+        sha256 = "0111lbq845fwqv8cn89m02v7bjd2lq2jvd814dziqlijpxcvv6mk";
+        libName = "unsafe_libyaml_norway";
         authors = [
+          "Christina Sørensen <christina@cafkafk.com>"
           "David Tolnay <dtolnay@gmail.com>"
         ];
 
