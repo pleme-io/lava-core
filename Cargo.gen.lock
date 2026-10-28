@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "3b2ba1942ad7cac40d714186b5338367c4cffd0a21a02beea20cf10b0a580e43",
+  "cargo_lock_sha256": "698f282b79a8f8dce01677e3ba65910064d858f32cf25d1e89ecf7ffae698bee",
   "manifest_sha256": {
-    "Cargo.toml": "23aa0c1621402fb362f32801eca48041f04574abf5382ed9b8067ff2191391b3"
+    "Cargo.toml": "e3cb8487458da11be41e93e4cfde6fab8d48a7d98d41dbb040bef6dd42a9e26f"
   },
   "target_resolves": {
     "base": {
@@ -105,8 +105,8 @@
             "tree": "target"
           },
           {
-            "name": "serde_yaml",
-            "package_key": "serde_yaml-0.9.34+deprecated",
+            "name": "serde_norway",
+            "package_key": "serde_norway-0.9.42",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -341,7 +341,7 @@
           "std"
         ]
       },
-      "serde_yaml-0.9.34+deprecated": {
+      "serde_norway-0.9.42": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -384,8 +384,8 @@
             "tree": "target"
           },
           {
-            "name": "unsafe_libyaml",
-            "package_key": "unsafe-libyaml-0.2.11",
+            "name": "unsafe_libyaml_norway",
+            "package_key": "unsafe-libyaml-norway-0.2.15",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -500,7 +500,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "unsafe-libyaml-0.2.11": {
+      "unsafe-libyaml-norway-0.2.15": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -585,7 +585,7 @@
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "serde_yaml-0.9.34+deprecated": {
+    "serde_norway-0.9.42": {
       "edition": "2021"
     },
     "syn-3.0.9": {
@@ -602,7 +602,7 @@
     "unicode-ident-1.0.27": {
       "edition": "2021"
     },
-    "unsafe-libyaml-0.2.11": {
+    "unsafe-libyaml-norway-0.2.15": {
       "edition": "2021",
       "binaries": [
         {

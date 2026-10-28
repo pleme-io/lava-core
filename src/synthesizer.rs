@@ -115,45 +115,45 @@ impl Synthesizer<CrossplaneYaml> for Architecture {
 /// shape. Internal helper — exposed via `Synthesizer<CrossplaneYaml>`.
 fn crossplane_yaml_from(arch_name: &str, terraform: &serde_json::Value) -> String {
     let kind_name = arch_kind(arch_name);
-    let mut xrd = serde_yaml::Mapping::new();
+    let mut xrd = serde_norway::Mapping::new();
     xrd.insert("apiVersion".into(), "apiextensions.crossplane.io/v1".into());
     xrd.insert("kind".into(), "CompositeResourceDefinition".into());
-    let mut xrd_metadata = serde_yaml::Mapping::new();
+    let mut xrd_metadata = serde_norway::Mapping::new();
     xrd_metadata.insert(
         "name".into(),
-        serde_yaml::Value::String(format!(
+        serde_norway::Value::String(format!(
             "{}.lava.pleme.io",
             arch_name.to_ascii_lowercase()
         )),
     );
-    xrd.insert("metadata".into(), serde_yaml::Value::Mapping(xrd_metadata));
-    let mut xrd_spec = serde_yaml::Mapping::new();
+    xrd.insert("metadata".into(), serde_norway::Value::Mapping(xrd_metadata));
+    let mut xrd_spec = serde_norway::Mapping::new();
     xrd_spec.insert("group".into(), "lava.pleme.io".into());
-    let mut xrd_names = serde_yaml::Mapping::new();
-    xrd_names.insert("kind".into(), serde_yaml::Value::String(kind_name.clone()));
+    let mut xrd_names = serde_norway::Mapping::new();
+    xrd_names.insert("kind".into(), serde_norway::Value::String(kind_name.clone()));
     xrd_names.insert(
         "plural".into(),
-        serde_yaml::Value::String(format!("{}s", kind_name.to_ascii_lowercase())),
+        serde_norway::Value::String(format!("{}s", kind_name.to_ascii_lowercase())),
     );
-    xrd_spec.insert("names".into(), serde_yaml::Value::Mapping(xrd_names));
-    xrd.insert("spec".into(), serde_yaml::Value::Mapping(xrd_spec));
+    xrd_spec.insert("names".into(), serde_norway::Value::Mapping(xrd_names));
+    xrd.insert("spec".into(), serde_norway::Value::Mapping(xrd_spec));
 
-    let mut composition = serde_yaml::Mapping::new();
+    let mut composition = serde_norway::Mapping::new();
     composition.insert("apiVersion".into(), "apiextensions.crossplane.io/v1".into());
     composition.insert("kind".into(), "Composition".into());
-    let mut comp_metadata = serde_yaml::Mapping::new();
+    let mut comp_metadata = serde_norway::Mapping::new();
     comp_metadata.insert(
         "name".into(),
-        serde_yaml::Value::String(format!("{arch_name}-composition")),
+        serde_norway::Value::String(format!("{arch_name}-composition")),
     );
-    composition.insert("metadata".into(), serde_yaml::Value::Mapping(comp_metadata));
-    let mut comp_spec = serde_yaml::Mapping::new();
-    let mut composite_type_ref = serde_yaml::Mapping::new();
+    composition.insert("metadata".into(), serde_norway::Value::Mapping(comp_metadata));
+    let mut comp_spec = serde_norway::Mapping::new();
+    let mut composite_type_ref = serde_norway::Mapping::new();
     composite_type_ref.insert("apiVersion".into(), "lava.pleme.io/v1alpha1".into());
-    composite_type_ref.insert("kind".into(), serde_yaml::Value::String(kind_name));
+    composite_type_ref.insert("kind".into(), serde_norway::Value::String(kind_name));
     comp_spec.insert(
         "compositeTypeRef".into(),
-        serde_yaml::Value::Mapping(composite_type_ref),
+        serde_norway::Value::Mapping(composite_type_ref),
     );
 
     // One Composition.resources entry per terraform resource — the
@@ -163,49 +163,49 @@ fn crossplane_yaml_from(arch_name: &str, terraform: &serde_json::Value) -> Strin
         for (type_id, by_name) in by_type {
             if let Some(by_name_map) = by_name.as_object() {
                 for (name, body) in by_name_map {
-                    let mut entry = serde_yaml::Mapping::new();
+                    let mut entry = serde_norway::Mapping::new();
                     entry.insert(
                         "name".into(),
-                        serde_yaml::Value::String(format!("{type_id}.{name}")),
+                        serde_norway::Value::String(format!("{type_id}.{name}")),
                     );
-                    let mut base = serde_yaml::Mapping::new();
+                    let mut base = serde_norway::Mapping::new();
                     base.insert(
                         "apiVersion".into(),
-                        serde_yaml::Value::String(format!("{type_id}.crossplane.io/v1alpha1")),
+                        serde_norway::Value::String(format!("{type_id}.crossplane.io/v1alpha1")),
                     );
-                    base.insert("kind".into(), serde_yaml::Value::String(arch_kind(type_id)));
-                    let mut base_metadata = serde_yaml::Mapping::new();
-                    base_metadata.insert("name".into(), serde_yaml::Value::String(name.clone()));
-                    base.insert("metadata".into(), serde_yaml::Value::Mapping(base_metadata));
-                    let mut spec = serde_yaml::Mapping::new();
+                    base.insert("kind".into(), serde_norway::Value::String(arch_kind(type_id)));
+                    let mut base_metadata = serde_norway::Mapping::new();
+                    base_metadata.insert("name".into(), serde_norway::Value::String(name.clone()));
+                    base.insert("metadata".into(), serde_norway::Value::Mapping(base_metadata));
+                    let mut spec = serde_norway::Mapping::new();
                     spec.insert(
                         "forProvider".into(),
                         json_to_yaml(body),
                     );
-                    base.insert("spec".into(), serde_yaml::Value::Mapping(spec));
-                    entry.insert("base".into(), serde_yaml::Value::Mapping(base));
-                    resources.push(serde_yaml::Value::Mapping(entry));
+                    base.insert("spec".into(), serde_norway::Value::Mapping(spec));
+                    entry.insert("base".into(), serde_norway::Value::Mapping(base));
+                    resources.push(serde_norway::Value::Mapping(entry));
                 }
             }
         }
     }
-    comp_spec.insert("resources".into(), serde_yaml::Value::Sequence(resources));
-    composition.insert("spec".into(), serde_yaml::Value::Mapping(comp_spec));
+    comp_spec.insert("resources".into(), serde_norway::Value::Sequence(resources));
+    composition.insert("spec".into(), serde_norway::Value::Mapping(comp_spec));
 
     // Multi-document YAML emission: typed MultiDocYaml wrapper with
     // a Display impl that writes `---\n` between documents via
     // writeln!() (the allowed surface per ★★ TYPED EMISSION).
     MultiDocYaml(vec![
-        serde_yaml::Value::Mapping(xrd),
-        serde_yaml::Value::Mapping(composition),
+        serde_norway::Value::Mapping(xrd),
+        serde_norway::Value::Mapping(composition),
     ])
     .to_string()
 }
 
-/// Typed multi-document YAML — joins N serde_yaml::Value documents
+/// Typed multi-document YAML — joins N serde_norway::Value documents
 /// with the YAML `---` separator via the Display surface. Avoids
 /// format!()-of-YAML-syntax per ★★ TYPED EMISSION.
-struct MultiDocYaml(Vec<serde_yaml::Value>);
+struct MultiDocYaml(Vec<serde_norway::Value>);
 
 impl std::fmt::Display for MultiDocYaml {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -213,9 +213,9 @@ impl std::fmt::Display for MultiDocYaml {
             if i > 0 {
                 writeln!(f, "---")?;
             }
-            // serde_yaml::to_string already terminates with a newline;
+            // serde_norway::to_string already terminates with a newline;
             // write the raw serialization through.
-            let body = serde_yaml::to_string(doc).unwrap_or_default();
+            let body = serde_norway::to_string(doc).unwrap_or_default();
             f.write_str(&body)?;
         }
         Ok(())
@@ -239,29 +239,29 @@ fn arch_kind(arch_name: &str) -> String {
     out
 }
 
-fn json_to_yaml(v: &serde_json::Value) -> serde_yaml::Value {
+fn json_to_yaml(v: &serde_json::Value) -> serde_norway::Value {
     match v {
-        serde_json::Value::Null => serde_yaml::Value::Null,
-        serde_json::Value::Bool(b) => serde_yaml::Value::Bool(*b),
+        serde_json::Value::Null => serde_norway::Value::Null,
+        serde_json::Value::Bool(b) => serde_norway::Value::Bool(*b),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(i))
+                serde_norway::Value::Number(serde_norway::Number::from(i))
             } else if let Some(f) = n.as_f64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(f))
+                serde_norway::Value::Number(serde_norway::Number::from(f))
             } else {
-                serde_yaml::Value::Null
+                serde_norway::Value::Null
             }
         }
-        serde_json::Value::String(s) => serde_yaml::Value::String(s.clone()),
+        serde_json::Value::String(s) => serde_norway::Value::String(s.clone()),
         serde_json::Value::Array(items) => {
-            serde_yaml::Value::Sequence(items.iter().map(json_to_yaml).collect())
+            serde_norway::Value::Sequence(items.iter().map(json_to_yaml).collect())
         }
         serde_json::Value::Object(map) => {
-            let mut m = serde_yaml::Mapping::new();
+            let mut m = serde_norway::Mapping::new();
             for (k, val) in map {
-                m.insert(serde_yaml::Value::String(k.clone()), json_to_yaml(val));
+                m.insert(serde_norway::Value::String(k.clone()), json_to_yaml(val));
             }
-            serde_yaml::Value::Mapping(m)
+            serde_norway::Value::Mapping(m)
         }
     }
 }
@@ -361,8 +361,8 @@ mod tests {
         use serde::Deserialize;
         let arch = tiny_vpc();
         let yaml = Synthesizer::<CrossplaneYaml>::synthesize(&arch).unwrap();
-        let docs: Vec<serde_yaml::Value> = serde_yaml::Deserializer::from_str(&yaml)
-            .map(|d| serde_yaml::Value::deserialize(d).unwrap())
+        let docs: Vec<serde_norway::Value> = serde_norway::Deserializer::from_str(&yaml)
+            .map(|d| serde_norway::Value::deserialize(d).unwrap())
             .collect();
         assert_eq!(docs.len(), 2, "expected XRD + Composition pair");
         assert_eq!(docs[0]["kind"], "CompositeResourceDefinition");

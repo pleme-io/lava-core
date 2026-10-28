@@ -795,8 +795,8 @@ mod tests {
             provider: None,
             multiplicity: None,
         });
-        let yaml = serde_yaml::to_string(&arch).unwrap();
-        let parsed: Architecture = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_norway::to_string(&arch).unwrap();
+        let parsed: Architecture = serde_norway::from_str(&yaml).unwrap();
         assert_eq!(arch, parsed);
     }
 

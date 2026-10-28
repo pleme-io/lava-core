@@ -22,6 +22,6 @@ serde = { version = "1", features = ["derive"] }
 # alphabetically, which silently falsifies the byte-stability guarantee
 # `Architecture::render_terraform_json` claims for itself.
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_yaml = "0.9"
+serde_norway = "0.9"
 thiserror = "2"
 indexmap = { version = "2", features = ["serde"] }
